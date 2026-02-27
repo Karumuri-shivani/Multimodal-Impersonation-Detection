@@ -1,0 +1,491 @@
+<!-- <!DOCTYPE html>
+<html>
+<head>
+    <title>Video Verification</title>
+</head>
+<body>
+
+<h2>Pre-Interview Verification</h2>
+
+<label>Enter Username:</label>
+<input type="text" id="username" placeholder="Enter your username" required>
+<br><br>
+
+<button id="registerDevice">Register Device</button>
+<button id="authDevice">Authenticate Device</button>
+
+<hr>
+
+<h3>Please read clearly:</h3>
+<p style="color: blue; font-weight: bold;">
+    {{ challenge }}
+</p>
+
+<hr>
+
+<video id="preview" width="400" autoplay muted></video>
+<br><br>
+
+<button id="start" disabled>Start Recording</button>
+<button id="stop" disabled>Stop Recording</button>
+<br><br>
+<button id="enroll">Enroll</button>
+<button id="verify">Verify</button>
+
+<script>
+
+// ==========================================================
+// 🎥 BIOMETRIC RECORDING (UNCHANGED)
+// ==========================================================
+
+let mode = null;
+let mediaRecorder;
+let recordedChunks = [];
+let startTime;
+
+const video = document.getElementById("preview");
+
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+.then(stream => {
+    video.srcObject = stream;
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+        const username = document.getElementById("username").value;
+        const blob = new Blob(recordedChunks, { type: "video/webm" });
+
+        const formData = new FormData();
+        formData.append("video", blob);
+        formData.append("username", username);
+        formData.append("mode", mode);
+
+        fetch("/upload", {
+            method: "POST",
+            body: formData
+        })
+        .then(res => res.text())
+        .then(data => alert(data));
+
+        recordedChunks = [];
+    };
+});
+
+document.getElementById("enroll").onclick = () => {
+    mode = "enroll";
+    document.getElementById("start").disabled = false;
+};
+
+document.getElementById("verify").onclick = () => {
+    mode = "verify";
+    document.getElementById("start").disabled = false;
+};
+
+document.getElementById("start").onclick = () => {
+    recordedChunks = [];
+    mediaRecorder.start();
+    startTime = Date.now();
+    document.getElementById("stop").disabled = false;
+};
+
+document.getElementById("stop").onclick = () => {
+    if ((Date.now() - startTime) / 1000 < 10) {
+        alert("Speak at least 10 seconds.");
+        return;
+    }
+    mediaRecorder.stop();
+};
+
+
+// ==========================================================
+// 🔐 BASE64URL HELPERS (SAFE)
+// ==========================================================
+
+function bufToB64(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf)))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=/g, "");
+}
+
+function b64ToBuf(b64) {
+    b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+
+// ==========================================================
+// 🔐 REGISTER DEVICE (FIXED)
+// ==========================================================
+
+document.getElementById("registerDevice").onclick = async () => {
+
+    const username = document.getElementById("username").value;
+
+    let r = await fetch("/register_begin", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username})
+    });
+
+    let options = await r.json();
+
+    options.challenge = b64ToBuf(options.challenge);
+    options.user.id = b64ToBuf(options.user.id);
+
+    let cred = await navigator.credentials.create({
+        publicKey: options
+    });
+
+    // ⭐ MUST use rawId for BOTH id and rawId
+    const rawId = bufToB64(cred.rawId);
+
+    const data = {
+        id: rawId,
+        rawId: rawId,
+        type: cred.type,
+        response: {
+            attestationObject: bufToB64(cred.response.attestationObject),
+            clientDataJSON: bufToB64(cred.response.clientDataJSON)
+        }
+    };
+
+    let res = await fetch("/register_complete", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({credential: data})
+    });
+
+    alert(await res.text());
+};
+
+
+// ==========================================================
+// 🔐 AUTHENTICATE DEVICE (FIXED)
+// ==========================================================
+
+document.getElementById("authDevice").onclick = async () => {
+
+    const username = document.getElementById("username").value;
+
+    let r = await fetch("/auth_begin", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username})
+    });
+
+    let options = await r.json();
+
+    options.challenge = b64ToBuf(options.challenge);
+
+    options.allowCredentials.forEach(c => {
+        c.id = b64ToBuf(c.id);
+    });
+
+    let cred = await navigator.credentials.get({
+        publicKey: options
+    });
+
+    const rawId = bufToB64(cred.rawId);
+
+    const data = {
+        id: rawId,
+        rawId: rawId,
+        type: cred.type,
+        response: {
+            authenticatorData: bufToB64(cred.response.authenticatorData),
+            clientDataJSON: bufToB64(cred.response.clientDataJSON),
+            signature: bufToB64(cred.response.signature),
+            userHandle: null
+        }
+    };
+
+    let res = await fetch("/auth_complete", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({credential: data})
+    });
+
+    alert(await res.text());
+};
+
+</script>
+</body>
+</html> -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Verification</title>
+</head>
+<body>
+
+<h2>Pre-Interview Verification</h2>
+
+<label>Enter Username:</label>
+<input type="text" id="username" placeholder="Enter your username" required>
+
+<br><br>
+
+<!-- 🔐 DEVICE AUTH BUTTONS -->
+<button id="registerDevice">Register Device</button>
+<button id="authDevice">Authenticate Device</button>
+
+<hr>
+
+<h3>Please read the following sentence clearly (10–15 seconds):</h3>
+
+<p style="color: blue; font-weight: bold; font-size: 18px;">
+    {{ challenge }}
+</p>
+
+<hr>
+
+<h3 id="currentMode" style="color: green;"></h3>
+
+<!-- 🎥 CAMERA PREVIEW -->
+<video id="preview" width="400" autoplay muted></video>
+<br><br>
+
+<button id="start" disabled>Start Recording</button>
+<button id="stop" disabled>Stop Recording</button>
+
+<br><br>
+
+<button id="enroll">Enroll</button>
+<button id="verify">Verify</button>
+
+
+<script>
+// ==========================================================
+// 🎥 BIOMETRIC RECORDING (UNCHANGED)
+// ==========================================================
+
+let mediaRecorder;
+let recordedChunks = [];
+let startTime;
+let mode = null;
+
+const video = document.getElementById("preview");
+const startBtn = document.getElementById("start");
+const stopBtn = document.getElementById("stop");
+const enrollBtn = document.getElementById("enroll");
+const verifyBtn = document.getElementById("verify");
+const modeText = document.getElementById("currentMode");
+
+enrollBtn.onclick = () => {
+    mode = "enroll";
+    modeText.innerText = "Current Mode: ENROLLMENT";
+
+    document.getElementById("registerDevice").style.display = "inline";
+    document.getElementById("authDevice").style.display = "none";
+
+    startBtn.disabled = false;
+};
+
+verifyBtn.onclick = () => {
+    mode = "verify";
+    modeText.innerText = "Current Mode: VERIFICATION";
+
+    document.getElementById("registerDevice").style.display = "none";
+    document.getElementById("authDevice").style.display = "inline";
+
+    startBtn.disabled = false;
+};
+
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+.then(stream => {
+    video.srcObject = stream;
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+
+    mediaRecorder.onstop = () => {
+
+        const username = document.getElementById("username").value;
+
+        if (!username) {
+            alert("Please enter username.");
+            return;
+        }
+
+        if (!mode) {
+            alert("Please select Enroll or Verify mode.");
+            return;
+        }
+
+        const blob = new Blob(recordedChunks, { type: "video/webm" });
+
+        const formData = new FormData();
+        formData.append("video", blob);
+        formData.append("username", username);
+        formData.append("mode", mode);
+
+        fetch("/upload", {
+            method: "POST",
+            body: formData
+        })
+        .then(response => response.text())
+        .then(data => alert(data))
+        .catch(error => alert("Error: " + error));
+
+        recordedChunks = [];
+    };
+})
+.catch(err => {
+    alert("Camera/Microphone access denied.");
+});
+
+startBtn.onclick = () => {
+    if (!mode) {
+        alert("Please select Enroll or Verify mode first.");
+        return;
+    }
+
+    recordedChunks = [];
+    mediaRecorder.start();
+    startTime = Date.now();
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+};
+
+stopBtn.onclick = () => {
+    const duration = (Date.now() - startTime) / 1000;
+
+    if (duration < 5) {
+        alert("Please speak for at least 5 seconds.");
+        return;
+    }
+
+    mediaRecorder.stop();
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+};
+
+
+// ==========================================================
+// 🔐 BASE64URL HELPERS FOR WEBAUTHN
+// ==========================================================
+
+function bufToB64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+function b64ToBuf(b64) {
+  b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+
+// ==========================================================
+// 🔐 REGISTER DEVICE (PASSKEY)
+// ==========================================================
+
+document.getElementById("registerDevice").onclick = async () => {
+
+  const username = document.getElementById("username").value;
+  if (!username) return alert("Enter username first.");
+
+  const r = await fetch("/register_begin", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username})
+  });
+
+  const options = await r.json();
+
+  options.challenge = b64ToBuf(options.challenge);
+  options.user.id = b64ToBuf(options.user.id);
+
+  const cred = await navigator.credentials.create({
+    publicKey: options
+  });
+
+const rawId = bufToB64(cred.rawId);
+
+const data = {
+  id: rawId,        // ⭐ MUST match rawId
+  rawId: rawId,
+  type: cred.type,
+  response: {
+    attestationObject: bufToB64(cred.response.attestationObject),
+    clientDataJSON: bufToB64(cred.response.clientDataJSON)
+  }
+};
+
+  const res = await fetch("/register_complete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({credential: data})
+  });
+
+  alert(await res.text());
+};
+
+
+// ==========================================================
+// 🔐 AUTHENTICATE DEVICE
+// ==========================================================
+
+document.getElementById("authDevice").onclick = async () => {
+
+  const username = document.getElementById("username").value;
+  if (!username) return alert("Enter username first.");
+
+  const r = await fetch("/auth_begin", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username})
+  });
+
+  const options = await r.json();
+
+  options.challenge = b64ToBuf(options.challenge);
+
+  options.allowCredentials.forEach(c => {
+    c.id = b64ToBuf(c.id);
+  });
+
+  const cred = await navigator.credentials.get({
+    publicKey: options
+  });
+
+const rawId = bufToB64(cred.rawId);
+
+const data = {
+  id: rawId,
+  rawId: rawId,
+  type: cred.type,
+  response: {
+    authenticatorData: bufToB64(cred.response.authenticatorData),
+    clientDataJSON: bufToB64(cred.response.clientDataJSON),
+    signature: bufToB64(cred.response.signature),
+    userHandle: null
+  }
+};
+
+  const res = await fetch("/auth_complete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({credential: data})
+  });
+
+  alert(await res.text());
+};
+
+</script>
+
+</body>
+</html>
