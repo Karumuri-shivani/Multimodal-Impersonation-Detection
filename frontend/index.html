@@ -230,13 +230,21 @@ document.getElementById("authDevice").onclick = async () => {
 
 <br><br>
 
-<!-- 🔐 DEVICE AUTH BUTTONS -->
+<!-- 🔐 DEVICE BUTTONS -->
 <button id="registerDevice">Register Device</button>
 <button id="authDevice">Authenticate Device</button>
 
+<br><br>
+
+<!-- 📱 QR DISPLAY -->
+<div id="qrContainer" style="display:none;">
+    <h3>Scan with your phone:</h3>
+    <img id="qrImage" width="250">
+</div>
+
 <hr>
 
-<h3>Please read the following sentence clearly (10–15 seconds):</h3>
+<h3>Please read the following sentence clearly:</h3>
 
 <p style="color: blue; font-weight: bold; font-size: 18px;">
     {{ challenge }}
@@ -246,8 +254,9 @@ document.getElementById("authDevice").onclick = async () => {
 
 <h3 id="currentMode" style="color: green;"></h3>
 
-<!-- 🎥 CAMERA PREVIEW -->
+<!-- 🎥 CAMERA -->
 <video id="preview" width="400" autoplay muted></video>
+
 <br><br>
 
 <button id="start" disabled>Start Recording</button>
@@ -258,10 +267,9 @@ document.getElementById("authDevice").onclick = async () => {
 <button id="enroll">Enroll</button>
 <button id="verify">Verify</button>
 
-
 <script>
 // ==========================================================
-// 🎥 BIOMETRIC RECORDING (UNCHANGED)
+// 🎥 RECORDING
 // ==========================================================
 
 let mediaRecorder;
@@ -282,8 +290,6 @@ enrollBtn.onclick = () => {
 
     document.getElementById("registerDevice").style.display = "inline";
     document.getElementById("authDevice").style.display = "none";
-
-    startBtn.disabled = false;
 };
 
 verifyBtn.onclick = () => {
@@ -292,8 +298,6 @@ verifyBtn.onclick = () => {
 
     document.getElementById("registerDevice").style.display = "none";
     document.getElementById("authDevice").style.display = "inline";
-
-    startBtn.disabled = false;
 };
 
 navigator.mediaDevices.getUserMedia({ video: true, audio: true })
@@ -301,25 +305,16 @@ navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     video.srcObject = stream;
     mediaRecorder = new MediaRecorder(stream);
 
-    mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-            recordedChunks.push(event.data);
-        }
+    mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onstop = () => {
 
         const username = document.getElementById("username").value;
 
-        if (!username) {
-            alert("Please enter username.");
-            return;
-        }
-
-        if (!mode) {
-            alert("Please select Enroll or Verify mode.");
-            return;
-        }
+        if (!username) return alert("Enter username");
+        if (!mode) return alert("Select mode");
 
         const blob = new Blob(recordedChunks, { type: "video/webm" });
 
@@ -328,26 +323,17 @@ navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         formData.append("username", username);
         formData.append("mode", mode);
 
-        fetch("/upload", {
-            method: "POST",
-            body: formData
-        })
-        .then(response => response.text())
-        .then(data => alert(data))
-        .catch(error => alert("Error: " + error));
+        fetch("/upload", { method: "POST", body: formData })
+        .then(r => r.text())
+        .then(alert);
 
         recordedChunks = [];
     };
 })
-.catch(err => {
-    alert("Camera/Microphone access denied.");
-});
+.catch(() => alert("Camera/Mic denied"));
 
 startBtn.onclick = () => {
-    if (!mode) {
-        alert("Please select Enroll or Verify mode first.");
-        return;
-    }
+    if (!mode) return alert("Select mode first");
 
     recordedChunks = [];
     mediaRecorder.start();
@@ -359,11 +345,7 @@ startBtn.onclick = () => {
 
 stopBtn.onclick = () => {
     const duration = (Date.now() - startTime) / 1000;
-
-    if (duration < 5) {
-        alert("Please speak for at least 5 seconds.");
-        return;
-    }
+    if (duration < 5) return alert("Speak at least 5 seconds");
 
     mediaRecorder.stop();
 
@@ -373,117 +355,57 @@ stopBtn.onclick = () => {
 
 
 // ==========================================================
-// 🔐 BASE64URL HELPERS FOR WEBAUTHN
+// 📱 QR FLOW (USED FOR BOTH REGISTER & AUTH)
 // ==========================================================
 
-function bufToB64(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-}
-
-function b64ToBuf(b64) {
-  b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-}
-
-
-// ==========================================================
-// 🔐 REGISTER DEVICE (PASSKEY)
-// ==========================================================
-
-document.getElementById("registerDevice").onclick = async () => {
+async function startQRFlow() {
 
   const username = document.getElementById("username").value;
-  if (!username) return alert("Enter username first.");
+  if (!username) return alert("Enter username");
 
-  const r = await fetch("/register_begin", {
+  const r = await fetch("/qr_create", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({username})
   });
 
-  const options = await r.json();
+  const data = await r.json();
 
-  options.challenge = b64ToBuf(options.challenge);
-  options.user.id = b64ToBuf(options.user.id);
+  document.getElementById("qrContainer").style.display = "block";
+  document.getElementById("qrImage").src = data.qr;
 
-  const cred = await navigator.credentials.create({
-    publicKey: options
-  });
-
-const rawId = bufToB64(cred.rawId);
-
-const data = {
-  id: rawId,        // ⭐ MUST match rawId
-  rawId: rawId,
-  type: cred.type,
-  response: {
-    attestationObject: bufToB64(cred.response.attestationObject),
-    clientDataJSON: bufToB64(cred.response.clientDataJSON)
-  }
-};
-
-  const res = await fetch("/register_complete", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({credential: data})
-  });
-
-  alert(await res.text());
-};
+  pollQR(data.session_id);
+}
 
 
-// ==========================================================
-// 🔐 AUTHENTICATE DEVICE
-// ==========================================================
+// Register Device → show QR
+document.getElementById("registerDevice").onclick = startQRFlow;
 
-document.getElementById("authDevice").onclick = async () => {
+// Authenticate Device → show QR
+document.getElementById("authDevice").onclick = startQRFlow;
 
-  const username = document.getElementById("username").value;
-  if (!username) return alert("Enter username first.");
 
-  const r = await fetch("/auth_begin", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({username})
-  });
+// Poll server for success
+function pollQR(sessionId) {
 
-  const options = await r.json();
+  const interval = setInterval(async () => {
 
-  options.challenge = b64ToBuf(options.challenge);
+    const r = await fetch(`/qr_status/${sessionId}`);
+    const status = await r.json();
 
-  options.allowCredentials.forEach(c => {
-    c.id = b64ToBuf(c.id);
-  });
+    if (status.authenticated) {
+      clearInterval(interval);
 
-  const cred = await navigator.credentials.get({
-    publicKey: options
-  });
+      alert("Device authentication successful ✅");
 
-const rawId = bufToB64(cred.rawId);
+      document.getElementById("qrContainer").style.display = "none";
 
-const data = {
-  id: rawId,
-  rawId: rawId,
-  type: cred.type,
-  response: {
-    authenticatorData: bufToB64(cred.response.authenticatorData),
-    clientDataJSON: bufToB64(cred.response.clientDataJSON),
-    signature: bufToB64(cred.response.signature),
-    userHandle: null
-  }
-};
+      // Now allow recording
+      startBtn.disabled = false;
+    }
 
-  const res = await fetch("/auth_complete", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({credential: data})
-  });
-
-  alert(await res.text());
-};
+  }, 2000);
+}
 
 </script>
 
