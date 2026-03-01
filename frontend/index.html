@@ -217,6 +217,7 @@ document.getElementById("authDevice").onclick = async () => {
 </html> -->
 
 <!DOCTYPE html>
+
 <html>
 <head>
     <title>Video Verification</title>
@@ -225,18 +226,14 @@ document.getElementById("authDevice").onclick = async () => {
 
 <h2>Pre-Interview Verification</h2>
 
-<label>Enter Username:</label>
-<input type="text" id="username" placeholder="Enter your username" required>
+<label>Enter Username:</label> <input type="text" id="username" placeholder="Enter your username" required>
 
 <br><br>
 
-<!-- 🔐 DEVICE BUTTONS -->
-<button id="registerDevice">Register Device</button>
-<button id="authDevice">Authenticate Device</button>
+<button id="registerDevice">Enroll Device (Phone)</button> <button id="authDevice">Authenticate Device (Phone)</button>
 
 <br><br>
 
-<!-- 📱 QR DISPLAY -->
 <div id="qrContainer" style="display:none;">
     <h3>Scan with your phone:</h3>
     <img id="qrImage" width="250">
@@ -252,55 +249,28 @@ document.getElementById("authDevice").onclick = async () => {
 
 <hr>
 
-<h3 id="currentMode" style="color: green;"></h3>
-
-<!-- 🎥 CAMERA -->
 <video id="preview" width="400" autoplay muted></video>
 
 <br><br>
 
-<button id="start" disabled>Start Recording</button>
-<button id="stop" disabled>Stop Recording</button>
+<button id="start" disabled>Start Recording</button> <button id="stop" disabled>Stop Recording</button>
 
 <br><br>
 
-<button id="enroll">Enroll</button>
-<button id="verify">Verify</button>
+<button id="enroll">Enroll</button> <button id="verify">Verify</button>
 
 <script>
-// ==========================================================
-// 🎥 RECORDING
-// ==========================================================
+// ======================= CAMERA =======================
 
 let mediaRecorder;
 let recordedChunks = [];
-let startTime;
 let mode = null;
 
 const video = document.getElementById("preview");
 const startBtn = document.getElementById("start");
 const stopBtn = document.getElementById("stop");
-const enrollBtn = document.getElementById("enroll");
-const verifyBtn = document.getElementById("verify");
-const modeText = document.getElementById("currentMode");
 
-enrollBtn.onclick = () => {
-    mode = "enroll";
-    modeText.innerText = "Current Mode: ENROLLMENT";
-
-    document.getElementById("registerDevice").style.display = "inline";
-    document.getElementById("authDevice").style.display = "none";
-};
-
-verifyBtn.onclick = () => {
-    mode = "verify";
-    modeText.innerText = "Current Mode: VERIFICATION";
-
-    document.getElementById("registerDevice").style.display = "none";
-    document.getElementById("authDevice").style.display = "inline";
-};
-
-navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+navigator.mediaDevices.getUserMedia({ video:true, audio:true })
 .then(stream => {
     video.srcObject = stream;
     mediaRecorder = new MediaRecorder(stream);
@@ -310,30 +280,31 @@ navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     };
 
     mediaRecorder.onstop = () => {
-
         const username = document.getElementById("username").value;
 
-        if (!username) return alert("Enter username");
-        if (!mode) return alert("Select mode");
-
-        const blob = new Blob(recordedChunks, { type: "video/webm" });
-
+        const blob = new Blob(recordedChunks, {type:"video/webm"});
         const formData = new FormData();
         formData.append("video", blob);
         formData.append("username", username);
         formData.append("mode", mode);
 
-        fetch("/upload", { method: "POST", body: formData })
-        .then(r => r.text())
-        .then(alert);
+        fetch("/upload", {method:"POST", body:formData})
+            .then(r=>r.text())
+            .then(alert);
 
         recordedChunks = [];
     };
-})
-.catch(() => alert("Camera/Mic denied"));
+});
 
 startBtn.onclick = () => {
+
     if (!mode) return alert("Select mode first");
+
+    // 🔒 Prevent double start
+    if (mediaRecorder.state === "recording") {
+        alert("Already recording");
+        return;
+    }
 
     recordedChunks = [];
     mediaRecorder.start();
@@ -341,11 +312,19 @@ startBtn.onclick = () => {
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
+
 };
 
 stopBtn.onclick = () => {
+
+    if (mediaRecorder.state !== "recording") return;
+
     const duration = (Date.now() - startTime) / 1000;
-    if (duration < 5) return alert("Speak at least 5 seconds");
+
+    if (duration < 5) {
+        alert("Speak at least 5 seconds");
+        return;
+    }
 
     mediaRecorder.stop();
 
@@ -353,58 +332,50 @@ stopBtn.onclick = () => {
     stopBtn.disabled = true;
 };
 
+// ======================= MODE =======================
 
-// ==========================================================
-// 📱 QR FLOW (USED FOR BOTH REGISTER & AUTH)
-// ==========================================================
+document.getElementById("enroll").onclick = () => mode="enroll";
+document.getElementById("verify").onclick = () => mode="verify";
 
-async function startQRFlow() {
+// ======================= QR FLOWS =======================
+
+async function startQR(endpoint){
 
   const username = document.getElementById("username").value;
-  if (!username) return alert("Enter username");
+  if(!username) return alert("Enter username");
 
-  const r = await fetch("/qr_create", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({username})
+  const r = await fetch(endpoint,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({username})
   });
 
   const data = await r.json();
 
-  document.getElementById("qrContainer").style.display = "block";
-  document.getElementById("qrImage").src = data.qr;
+  document.getElementById("qrContainer").style.display="block";
+  document.getElementById("qrImage").src=data.qr;
 
-  pollQR(data.session_id);
+  poll(data.session_id);
 }
 
+document.getElementById("registerDevice")
+    .onclick = () => startQR("/qr_register_create");
 
-// Register Device → show QR
-document.getElementById("registerDevice").onclick = startQRFlow;
+document.getElementById("authDevice")
+    .onclick = () => startQR("/qr_auth_create");
 
-// Authenticate Device → show QR
-document.getElementById("authDevice").onclick = startQRFlow;
+function poll(id){
+  const t=setInterval(async()=>{
+    const r=await fetch(`/qr_status/${id}`);
+    const s=await r.json();
 
-
-// Poll server for success
-function pollQR(sessionId) {
-
-  const interval = setInterval(async () => {
-
-    const r = await fetch(`/qr_status/${sessionId}`);
-    const status = await r.json();
-
-    if (status.authenticated) {
-      clearInterval(interval);
-
-      alert("Device authentication successful ✅");
-
-      document.getElementById("qrContainer").style.display = "none";
-
-      // Now allow recording
-      startBtn.disabled = false;
+    if(s.authenticated){
+        clearInterval(t);
+        alert("Phone verification success ✅");
+        document.getElementById("qrContainer").style.display="none";
+        startBtn.disabled=false;
     }
-
-  }, 2000);
+  },2000);
 }
 
 </script>

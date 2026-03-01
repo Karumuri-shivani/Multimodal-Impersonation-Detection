@@ -1,7 +1,6 @@
 import random
 import numpy as np
 import subprocess
-import timm
 import os
 import cv2
 import json
@@ -30,7 +29,7 @@ from fido2.webauthn import (
     AttestedCredentialData
 )
 
-# ---------- BASE64 HELPERS ----------
+# ================= BASE64 HELPERS =================
 
 def b64encode(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
@@ -39,14 +38,13 @@ def b64decode(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-# ---------- CHALLENGE SENTENCE ----------
+# ================= CHALLENGE SENTENCE =================
 
 def generate_challenge_sentence():
     sentences = [
-        "Today I confirm that I am the authorized candidate for this interview process.",
+        "Today I confirm that I am the authorized candidate.",
         "I am verifying my identity for this session.",
-        "This verification step ensures that I am the genuine applicant.",
-        "I understand that this system uses face and voice verification."
+        "This verification ensures I am the genuine applicant."
     ]
     return random.choice(sentences)
 
@@ -58,23 +56,23 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# ---------- WebAuthn Server ----------
+# ================= WebAuthn Server =================
 
 rp = PublicKeyCredentialRpEntity(
-    id="192.168.0.4",
+    id="eugena-uncitizenlike-linwood.ngrok-free.dev",  # CHANGE if your IP changes
     name="Interview Verification"
 )
 
 webauthn_server = Fido2Server(rp)
 
-# ---------- QR SESSION STORE ----------
+# ================= QR SESSION STORE =================
 
 qr_sessions = {}
 
 
-# =========================================================
+# ======================================================
 # HOME
-# =========================================================
+# ======================================================
 
 @app.route("/")
 def index():
@@ -84,321 +82,239 @@ def index():
     )
 
 
-# =========================================================
-# DEVICE REGISTRATION
-# =========================================================
+# ======================================================
+# QR — CREATE REGISTRATION SESSION
+# ======================================================
 
-@app.route("/register_begin", methods=["POST"])
-def register_begin():
-
-    username = request.json["username"]
-
-    user = {
-        "id": username.encode(),
-        "name": username,
-        "displayName": username,
-    }
-
-    options, state = webauthn_server.register_begin(
-        user,
-        authenticator_attachment="platform",
-        user_verification="preferred",
-    )
-
-    session["state"] = state
-    session["username"] = username
-
-    def encode(obj):
-        if isinstance(obj, bytes):
-            return b64encode(obj)
-        if isinstance(obj, dict):
-            return {k: encode(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [encode(v) for v in obj]
-        return obj
-
-    return jsonify(encode(dict(options.public_key)))
-
-
-@app.route("/register_complete", methods=["POST"])
-def register_complete():
-
-    credential = request.json["credential"]
-    state = session["state"]
-    username = session["username"]
-
-    credential["id"] = b64decode(credential["id"])
-    credential["rawId"] = b64decode(credential["rawId"])
-
-    credential["response"]["attestationObject"] = b64decode(
-        credential["response"]["attestationObject"]
-    )
-    credential["response"]["clientDataJSON"] = b64decode(
-        credential["response"]["clientDataJSON"]
-    )
-
-    auth_data = webauthn_server.register_complete(state, credential)
-    cred_data = auth_data.credential_data
-
-    user_folder = os.path.join(UPLOAD_FOLDER, username)
-    os.makedirs(user_folder, exist_ok=True)
-
-    with open(os.path.join(user_folder, "webauthn.json"), "w") as f:
-        json.dump({
-            "credential_id": b64encode(cred_data.credential_id),
-            "credential_data": b64encode(bytes(cred_data)),
-            "sign_count": auth_data.counter
-        }, f)
-
-    return "Device registered ✅"
-
-
-# =========================================================
-# LOCAL DEVICE AUTHENTICATION
-# =========================================================
-
-@app.route("/auth_begin", methods=["POST"])
-def auth_begin():
+@app.route("/qr_register_create", methods=["POST"])
+def qr_register_create():
 
     username = request.json["username"]
-    cred_path = os.path.join(UPLOAD_FOLDER, username, "webauthn.json")
-
-    if not os.path.exists(cred_path):
-        return "Device not registered ❌", 400
-
-    with open(cred_path) as f:
-        cred_data = json.load(f)
-
-    credential = PublicKeyCredentialDescriptor(
-        id=b64decode(cred_data["credential_id"]),
-        type="public-key"
-    )
-
-    options, state = webauthn_server.authenticate_begin([credential])
-
-    session["state"] = state
-    session["username"] = username
-
-    def encode(obj):
-        if isinstance(obj, bytes):
-            return b64encode(obj)
-        if isinstance(obj, dict):
-            return {k: encode(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [encode(v) for v in obj]
-        return obj
-
-    return jsonify(encode(dict(options.public_key)))
-
-
-@app.route("/auth_complete", methods=["POST"])
-def auth_complete():
-
-    credential = request.json["credential"]
-    state = session["state"]
-    username = session["username"]
-
-    credential["id"] = b64decode(credential["id"])
-    credential["rawId"] = b64decode(credential["rawId"])
-
-    credential["response"]["authenticatorData"] = b64decode(
-        credential["response"]["authenticatorData"]
-    )
-    credential["response"]["clientDataJSON"] = b64decode(
-        credential["response"]["clientDataJSON"]
-    )
-    credential["response"]["signature"] = b64decode(
-        credential["response"]["signature"]
-    )
-
-    cred_path = os.path.join(UPLOAD_FOLDER, username, "webauthn.json")
-
-    with open(cred_path) as f:
-        stored = json.load(f)
-
-    stored_credential = AttestedCredentialData(
-        b64decode(stored["credential_data"])
-    )
-
-    webauthn_server.authenticate_complete(
-        state,
-        [stored_credential],
-        credential
-    )
-
-    session["device_authenticated"] = True
-
-    return "Device authenticated ✅"
-
-
-# =========================================================
-# QR SESSION CREATION (LAPTOP)
-# =========================================================
-
-@app.route("/qr_create", methods=["POST"])
-def qr_create():
-
-    username = request.json["username"]
-
     sid = secrets.token_urlsafe(16)
 
     qr_sessions[sid] = {
         "username": username,
+        "type": "register",
         "authenticated": False
     }
 
-    mobile_url = f"http://192.168.0.4:5000/qr_mobile/{sid}"
+    host = request.host_url.rstrip("/")
+    mobile_url = f"{host}/qr_mobile/{sid}"
 
     img = qrcode.make(mobile_url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    buf.seek(0)
-
-    qr_base64 = base64.b64encode(buf.read()).decode()
+    qr = base64.b64encode(buf.getvalue()).decode()
 
     return jsonify({
         "session_id": sid,
-        "qr": f"data:image/png;base64,{qr_base64}"
+        "qr": f"data:image/png;base64,{qr}"
     })
 
 
+# ======================================================
+# QR — CREATE AUTH SESSION
+# ======================================================
 
-# =========================================================
-# MOBILE PAGE (PHONE)
-# =========================================================
+@app.route("/qr_auth_create", methods=["POST"])
+def qr_auth_create():
+
+    username = request.json["username"]
+    sid = secrets.token_urlsafe(16)
+
+    qr_sessions[sid] = {
+        "username": username,
+        "type": "auth",
+        "authenticated": False
+    }
+
+    host = request.host_url.rstrip("/")
+    mobile_url = f"{host}/qr_mobile/{sid}"
+
+    img = qrcode.make(mobile_url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr = base64.b64encode(buf.getvalue()).decode()
+
+    return jsonify({
+        "session_id": sid,
+        "qr": f"data:image/png;base64,{qr}"
+    })
+
+
+# ======================================================
+# PHONE PAGE
+# ======================================================
 
 @app.route("/qr_mobile/<sid>")
-def qr_mobile_page(sid):
+def qr_mobile(sid):
 
     return f"""
-    <h2>Verify with Biometrics</h2>
-    <button onclick="startAuth()">Authenticate</button>
+<h2>Phone Biometric Verification</h2>
+<button onclick="go()">Continue</button>
 
-    <script>
-    function b64ToBuf(b64) {{
-      b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
-      return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    }}
+<script>
 
-    function bufToB64(buf) {{
-      return btoa(String.fromCharCode(...new Uint8Array(buf)))
-        .replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=/g, "");
-    }}
+function b64ToBuf(b64){{
+ b64=b64.replace(/-/g,'+').replace(/_/g,'/');
+ return Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+}}
 
-    async function startAuth() {{
+function bufToB64(buf){{
+ return btoa(String.fromCharCode(...new Uint8Array(buf)))
+ .replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=/g,'');
+}}
 
-        const r = await fetch("/qr_auth_begin/{sid}", {{method: "POST"}});
-        const options = await r.json();
+async function go(){{
+ const r=await fetch('/qr_webauthn_begin/{sid}',{{method:'POST'}});
+ const opt=await r.json();
 
-        options.challenge = b64ToBuf(options.challenge);
-        options.allowCredentials.forEach(c => c.id = b64ToBuf(c.id));
+ opt.challenge=b64ToBuf(opt.challenge);
+ if(opt.user) opt.user.id=b64ToBuf(opt.user.id);
+ if(opt.allowCredentials)
+   opt.allowCredentials.forEach(c=>c.id=b64ToBuf(c.id));
 
-        const cred = await navigator.credentials.get({{ publicKey: options }});
+ let cred;
 
-        const rawId = bufToB64(cred.rawId);
+ if(opt.rp){{
+   cred=await navigator.credentials.create({{publicKey:opt}});
+ }} else {{
+   cred=await navigator.credentials.get({{publicKey:opt}});
+ }}
 
-        const data = {{
-            id: rawId,
-            rawId: rawId,
-            type: cred.type,
-            response: {{
-                authenticatorData: bufToB64(cred.response.authenticatorData),
-                clientDataJSON: bufToB64(cred.response.clientDataJSON),
-                signature: bufToB64(cred.response.signature),
-                userHandle: null
-            }}
-        }};
+ const raw=bufToB64(cred.rawId);
 
-        await fetch("/qr_auth_complete/{sid}", {{
-            method: "POST",
-            headers: {{"Content-Type": "application/json"}},
-            body: JSON.stringify({{credential: data}})
-        }});
+ const data={{
+  id:raw,
+  rawId:raw,
+  type:cred.type,
+  response:{{
+    clientDataJSON:bufToB64(cred.response.clientDataJSON),
+    attestationObject:cred.response.attestationObject
+      ? bufToB64(cred.response.attestationObject)
+      : null,
+    authenticatorData:cred.response.authenticatorData
+      ? bufToB64(cred.response.authenticatorData)
+      : null,
+    signature:cred.response.signature
+      ? bufToB64(cred.response.signature)
+      : null
+  }}
+ }};
 
-        alert("Biometric verified. Return to laptop.");
-    }}
-    </script>
-    """
-    
-@app.route("/qr_auth_begin/<sid>", methods=["POST"])
-def qr_auth_begin(sid):
+ await fetch('/qr_webauthn_complete/{sid}',{{
+  method:'POST',
+  headers:{{'Content-Type':'application/json'}},
+  body:JSON.stringify({{credential:data}})
+ }});
 
-    data = qr_sessions.get(sid)
-    if not data:
-        return "Invalid session", 400
+ alert("Success. Return to laptop.");
+}}
+</script>
+"""
 
+
+# ======================================================
+# BEGIN WEBAUTHN
+# ======================================================
+
+@app.route("/qr_webauthn_begin/<sid>", methods=["POST"])
+def qr_webauthn_begin(sid):
+
+    data = qr_sessions[sid]
     username = data["username"]
-    cred_path = os.path.join(UPLOAD_FOLDER, username, "webauthn.json")
 
-    if not os.path.exists(cred_path):
-        return "Device not registered", 400
+    if data["type"] == "register":
 
-    with open(cred_path) as f:
-        cred_data = json.load(f)
+        user = {
+            "id": username.encode(),
+            "name": username,
+            "displayName": username
+        }
 
-    credential = PublicKeyCredentialDescriptor(
-        id=b64decode(cred_data["credential_id"]),
-        type="public-key"
-    )
+        options, state = webauthn_server.register_begin(user)
 
-    options, state = webauthn_server.authenticate_begin([credential])
+    else:
+        cred_path = os.path.join(UPLOAD_FOLDER, username, "webauthn.json")
+
+        with open(cred_path) as f:
+            c = json.load(f)
+
+        credential = PublicKeyCredentialDescriptor(
+            id=b64decode(c["credential_id"]),
+            type="public-key"
+        )
+
+        options, state = webauthn_server.authenticate_begin([credential])
 
     session["state"] = state
     session["username"] = username
-    session["qr_sid"] = sid
+    session["sid"] = sid
 
-    def encode(obj):
-        if isinstance(obj, bytes):
-            return b64encode(obj)
-        if isinstance(obj, dict):
-            return {k: encode(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [encode(v) for v in obj]
-        return obj
+    def enc(o):
+        if isinstance(o, bytes): return b64encode(o)
+        if isinstance(o, dict): return {k: enc(v) for k, v in o.items()}
+        if isinstance(o, list): return [enc(v) for v in o]
+        return o
 
-    return jsonify(encode(dict(options.public_key)))
+    return jsonify(enc(dict(options.public_key)))
 
 
-@app.route("/qr_auth_complete/<sid>", methods=["POST"])
-def qr_auth_complete(sid):
+# ======================================================
+# COMPLETE WEBAUTHN
+# ======================================================
 
-    credential = request.json["credential"]
-    state = session["state"]
+@app.route("/qr_webauthn_complete/<sid>", methods=["POST"])
+def qr_webauthn_complete(sid):
+
+    cred = request.json["credential"]
     username = session["username"]
+    state = session["state"]
 
-    credential["id"] = b64decode(credential["id"])
-    credential["rawId"] = b64decode(credential["rawId"])
+    cred["id"] = b64decode(cred["id"])
+    cred["rawId"] = b64decode(cred["rawId"])
 
-    credential["response"]["authenticatorData"] = b64decode(
-        credential["response"]["authenticatorData"]
-    )
-    credential["response"]["clientDataJSON"] = b64decode(
-        credential["response"]["clientDataJSON"]
-    )
-    credential["response"]["signature"] = b64decode(
-        credential["response"]["signature"]
-    )
+    for k, v in cred["response"].items():
+        if v:
+            cred["response"][k] = b64decode(v)
 
-    cred_path = os.path.join(UPLOAD_FOLDER, username, "webauthn.json")
+    if qr_sessions[sid]["type"] == "register":
 
-    with open(cred_path) as f:
-        stored = json.load(f)
+        auth = webauthn_server.register_complete(state, cred)
 
-    stored_credential = AttestedCredentialData(
-        b64decode(stored["credential_data"])
-    )
+        user_folder = os.path.join(UPLOAD_FOLDER, username)
+        os.makedirs(user_folder, exist_ok=True)
 
-    webauthn_server.authenticate_complete(
-        state,
-        [stored_credential],
-        credential
-    )
+        with open(os.path.join(user_folder, "webauthn.json"), "w") as f:
+            json.dump({
+                "credential_id": b64encode(auth.credential_data.credential_id),
+                "credential_data": b64encode(bytes(auth.credential_data))
+            }, f)
+
+    else:
+
+        cred_path = os.path.join(UPLOAD_FOLDER, username, "webauthn.json")
+
+        with open(cred_path) as f:
+            stored = json.load(f)
+
+        stored_cred = AttestedCredentialData(
+            b64decode(stored["credential_data"])
+        )
+
+        webauthn_server.authenticate_complete(
+            state, [stored_cred], cred
+        )
 
     qr_sessions[sid]["authenticated"] = True
 
     return "OK"
-    
-    
+
+
+# ======================================================
+# QR STATUS POLLING
+# ======================================================
+
 @app.route("/qr_status/<sid>")
 def qr_status(sid):
 
@@ -410,9 +326,9 @@ def qr_status(sid):
     return jsonify({"authenticated": data and data["authenticated"]})
 
 
-# =========================================================
-# VIDEO PROCESSING
-# =========================================================
+# ======================================================
+# VIDEO PROCESSING (UNCHANGED)
+# ======================================================
 
 @app.route("/upload", methods=["POST"])
 def upload_video():
@@ -485,6 +401,10 @@ def upload_video():
     else:
         return "FINAL REJECTED ❌"
 
+
+# ======================================================
+# RUN SERVER
+# ======================================================
 
 if __name__ == "__main__":
     app.run(
