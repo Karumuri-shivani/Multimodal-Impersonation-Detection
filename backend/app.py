@@ -363,11 +363,16 @@ def upload_video():
 
     audio_path = os.path.join(user_folder, "temp_audio.wav")
 
-    subprocess.run(
-        ["ffmpeg", "-i", save_path, "-ar", "16000", "-ac", "1", audio_path, "-y"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
+    subprocess.run([
+        "ffmpeg",
+        "-i", save_path,
+        "-vn",                 # ❗ ignore video stream
+        "-ac", "1",            # mono
+        "-ar", "16000",        # 16 kHz
+        "-acodec", "pcm_s16le",# clean WAV PCM
+        audio_path,
+        "-y"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     voice_embedding = get_voice_embedding(audio_path)
 
@@ -391,15 +396,37 @@ def upload_video():
     audio_tensor = process_audio(audio_path)
     audio_prob = check_audio_authenticity(audio_tensor)
 
-    if (
+    face_similarity = float(face_similarity)
+    voice_similarity = float(voice_similarity)
+    video_prob = float(video_prob)
+    audio_prob = float(audio_prob)
+
+    # ------------------------------
+    # Adaptive threshold for recorded videos
+    # ------------------------------
+
+    if mode == "verify_recorded":
+        voice_threshold = 0.40
+    else:
+        voice_threshold = 0.75
+
+    result = (
         face_similarity > 0.65 and
-        voice_similarity > 0.75 and
+        voice_similarity > voice_threshold and
         video_prob > 0.40 and
         audio_prob > 0.40
-    ):
-        return "FINAL VERIFIED & AUTHENTIC ✅"
-    else:
-        return "FINAL REJECTED ❌"
+    )
+
+    message = f"""
+    Face similarity: {face_similarity:.3f}
+    Voice similarity: {voice_similarity:.3f}
+    Video authenticity: {video_prob:.3f}
+    Audio authenticity: {audio_prob:.3f}
+
+    Final result: {"VERIFIED ✅" if result else "REJECTED ❌"}
+    """
+
+    return message
 
 
 # ======================================================

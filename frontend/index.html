@@ -1,4 +1,4 @@
-<!-- <!DOCTYPE html>
+<!--<!DOCTYPE html>
 <html>
 <head>
     <title>Video Verification</title>
@@ -9,228 +9,11 @@
 
 <label>Enter Username:</label>
 <input type="text" id="username" placeholder="Enter your username" required>
-<br><br>
-
-<button id="registerDevice">Register Device</button>
-<button id="authDevice">Authenticate Device</button>
-
-<hr>
-
-<h3>Please read clearly:</h3>
-<p style="color: blue; font-weight: bold;">
-    {{ challenge }}
-</p>
-
-<hr>
-
-<video id="preview" width="400" autoplay muted></video>
-<br><br>
-
-<button id="start" disabled>Start Recording</button>
-<button id="stop" disabled>Stop Recording</button>
-<br><br>
-<button id="enroll">Enroll</button>
-<button id="verify">Verify</button>
-
-<script>
-
-// ==========================================================
-// 🎥 BIOMETRIC RECORDING (UNCHANGED)
-// ==========================================================
-
-let mode = null;
-let mediaRecorder;
-let recordedChunks = [];
-let startTime;
-
-const video = document.getElementById("preview");
-
-navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-.then(stream => {
-    video.srcObject = stream;
-    mediaRecorder = new MediaRecorder(stream);
-
-    mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-        const username = document.getElementById("username").value;
-        const blob = new Blob(recordedChunks, { type: "video/webm" });
-
-        const formData = new FormData();
-        formData.append("video", blob);
-        formData.append("username", username);
-        formData.append("mode", mode);
-
-        fetch("/upload", {
-            method: "POST",
-            body: formData
-        })
-        .then(res => res.text())
-        .then(data => alert(data));
-
-        recordedChunks = [];
-    };
-});
-
-document.getElementById("enroll").onclick = () => {
-    mode = "enroll";
-    document.getElementById("start").disabled = false;
-};
-
-document.getElementById("verify").onclick = () => {
-    mode = "verify";
-    document.getElementById("start").disabled = false;
-};
-
-document.getElementById("start").onclick = () => {
-    recordedChunks = [];
-    mediaRecorder.start();
-    startTime = Date.now();
-    document.getElementById("stop").disabled = false;
-};
-
-document.getElementById("stop").onclick = () => {
-    if ((Date.now() - startTime) / 1000 < 10) {
-        alert("Speak at least 10 seconds.");
-        return;
-    }
-    mediaRecorder.stop();
-};
-
-
-// ==========================================================
-// 🔐 BASE64URL HELPERS (SAFE)
-// ==========================================================
-
-function bufToB64(buf) {
-    return btoa(String.fromCharCode(...new Uint8Array(buf)))
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=/g, "");
-}
-
-function b64ToBuf(b64) {
-    b64 = b64.replace(/-/g, "+").replace(/_/g, "/");
-    return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-}
-
-
-// ==========================================================
-// 🔐 REGISTER DEVICE (FIXED)
-// ==========================================================
-
-document.getElementById("registerDevice").onclick = async () => {
-
-    const username = document.getElementById("username").value;
-
-    let r = await fetch("/register_begin", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({username})
-    });
-
-    let options = await r.json();
-
-    options.challenge = b64ToBuf(options.challenge);
-    options.user.id = b64ToBuf(options.user.id);
-
-    let cred = await navigator.credentials.create({
-        publicKey: options
-    });
-
-    // ⭐ MUST use rawId for BOTH id and rawId
-    const rawId = bufToB64(cred.rawId);
-
-    const data = {
-        id: rawId,
-        rawId: rawId,
-        type: cred.type,
-        response: {
-            attestationObject: bufToB64(cred.response.attestationObject),
-            clientDataJSON: bufToB64(cred.response.clientDataJSON)
-        }
-    };
-
-    let res = await fetch("/register_complete", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({credential: data})
-    });
-
-    alert(await res.text());
-};
-
-
-// ==========================================================
-// 🔐 AUTHENTICATE DEVICE (FIXED)
-// ==========================================================
-
-document.getElementById("authDevice").onclick = async () => {
-
-    const username = document.getElementById("username").value;
-
-    let r = await fetch("/auth_begin", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({username})
-    });
-
-    let options = await r.json();
-
-    options.challenge = b64ToBuf(options.challenge);
-
-    options.allowCredentials.forEach(c => {
-        c.id = b64ToBuf(c.id);
-    });
-
-    let cred = await navigator.credentials.get({
-        publicKey: options
-    });
-
-    const rawId = bufToB64(cred.rawId);
-
-    const data = {
-        id: rawId,
-        rawId: rawId,
-        type: cred.type,
-        response: {
-            authenticatorData: bufToB64(cred.response.authenticatorData),
-            clientDataJSON: bufToB64(cred.response.clientDataJSON),
-            signature: bufToB64(cred.response.signature),
-            userHandle: null
-        }
-    };
-
-    let res = await fetch("/auth_complete", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({credential: data})
-    });
-
-    alert(await res.text());
-};
-
-</script>
-</body>
-</html> -->
-
-<!DOCTYPE html>
-
-<html>
-<head>
-    <title>Video Verification</title>
-</head>
-<body>
-
-<h2>Pre-Interview Verification</h2>
-
-<label>Enter Username:</label> <input type="text" id="username" placeholder="Enter your username" required>
 
 <br><br>
 
-<button id="registerDevice">Enroll Device (Phone)</button> <button id="authDevice">Authenticate Device (Phone)</button>
+<button id="registerDevice">Enroll Device (Phone)</button>
+<button id="authDevice">Authenticate Device (Phone)</button>
 
 <br><br>
 
@@ -253,11 +36,21 @@ document.getElementById("authDevice").onclick = async () => {
 
 <br><br>
 
-<button id="start" disabled>Start Recording</button> <button id="stop" disabled>Stop Recording</button>
+<button id="start" disabled>Start Recording</button>
+<button id="stop" disabled>Stop Recording</button>
 
 <br><br>
 
-<button id="enroll">Enroll</button> <button id="verify">Verify</button>
+<!-- 🆕 RECORDED VIDEO OPTION (VERIFY ONLY) -->
+<!--<h3>Or upload recorded video (Verification only):</h3>
+
+<input type="file" id="videoFile" accept="video/*">
+<button id="uploadRecorded">Verify Recorded Video</button>
+
+<br><br>
+
+<button id="enroll">Enroll</button>
+<button id="verify">Verify</button>
 
 <script>
 // ======================= CAMERA =======================
@@ -265,6 +58,7 @@ document.getElementById("authDevice").onclick = async () => {
 let mediaRecorder;
 let recordedChunks = [];
 let mode = null;
+let startTime;
 
 const video = document.getElementById("preview");
 const startBtn = document.getElementById("start");
@@ -296,11 +90,11 @@ navigator.mediaDevices.getUserMedia({ video:true, audio:true })
     };
 });
 
+// START LIVE RECORDING
 startBtn.onclick = () => {
 
     if (!mode) return alert("Select mode first");
 
-    // 🔒 Prevent double start
     if (mediaRecorder.state === "recording") {
         alert("Already recording");
         return;
@@ -312,9 +106,9 @@ startBtn.onclick = () => {
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
-
 };
 
+// STOP LIVE RECORDING
 stopBtn.onclick = () => {
 
     if (mediaRecorder.state !== "recording") return;
@@ -334,8 +128,43 @@ stopBtn.onclick = () => {
 
 // ======================= MODE =======================
 
-document.getElementById("enroll").onclick = () => mode="enroll";
-document.getElementById("verify").onclick = () => mode="verify";
+document.getElementById("enroll").onclick = () => {
+    mode = "enroll";
+    alert("Enrollment mode selected");
+};
+
+document.getElementById("verify").onclick = () => {
+    mode = "verify";
+    alert("Verification mode selected");
+};
+
+// ======================= RECORDED VIDEO UPLOAD =======================
+
+document.getElementById("uploadRecorded").onclick = async () => {
+
+  const username = document.getElementById("username").value;
+  const file = document.getElementById("videoFile").files[0];
+
+  if (!username) return alert("Enter username");
+  if (!mode) return alert("Select mode first");
+
+  if (mode !== "verify")
+      return alert("Recorded video allowed only in VERIFY mode");
+
+  if (!file) return alert("Choose a video file");
+
+  const formData = new FormData();
+  formData.append("video", file);
+  formData.append("username", username);
+  formData.append("mode", "verify_recorded");
+
+  const r = await fetch("/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  alert(await r.text());
+};
 
 // ======================= QR FLOWS =======================
 
@@ -364,6 +193,7 @@ document.getElementById("registerDevice")
 document.getElementById("authDevice")
     .onclick = () => startQR("/qr_auth_create");
 
+// POLLING FOR SUCCESS
 function poll(id){
   const t=setInterval(async()=>{
     const r=await fetch(`/qr_status/${id}`);
@@ -378,6 +208,413 @@ function poll(id){
   },2000);
 }
 
+</script>
+
+</body>
+</html>-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Interview Identity Verification</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f4f6f9;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.05);
+        }
+
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 0; font-size: 20px; }
+
+        input[type="text"], input[type="file"] {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            width: 250px;
+        }
+
+        button {
+            padding: 10px 18px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            margin-right: 8px;
+        }
+
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-gray { background: #e5e7eb; }
+
+        .hidden { display: none; }
+
+        .progress {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .step {
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: #e5e7eb;
+            font-size: 14px;
+        }
+
+        .step.active {
+            background: #2563eb;
+            color: white;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+        }
+
+        .challenge-box {
+            background: #eef2ff;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 600;
+            color: #1e40af;
+        }
+
+        .rec-indicator {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: bold;
+            color: red;
+            font-size: 14px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            background: red;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        .results {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        .center { text-align: center; }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>🔐 Interview Identity Verification</h1>
+
+    <!-- LANDING -->
+    <div id="landing" class="card center">
+        <h2>Select Mode</h2>
+        <button class="btn-primary" onclick="startFlow('enroll')">Enroll New User</button>
+        <button class="btn-success" onclick="startFlow('verify')">Verify Existing User</button>
+    </div>
+
+    <!-- MAIN FLOW -->
+    <div id="mainFlow" class="hidden">
+
+        <div class="progress">
+            <div id="step1" class="step active">Device</div>
+            <div id="step2" class="step">Capture</div>
+            <div id="step3" class="step">Result</div>
+        </div>
+
+        <!-- USER INPUT -->
+        <div class="card">
+            <h2>User</h2>
+            <input type="text" id="username" placeholder="Enter username">
+        </div>
+
+        <!-- DEVICE -->
+        <div class="card">
+            <h2>Device Authentication</h2>
+            <button id="deviceBtn" class="btn-primary"></button>
+
+            <div id="qrContainer" class="hidden">
+                <img id="qrImage" width="200">
+            </div>
+
+            <div id="deviceStatus"></div>
+        </div>
+
+        <!-- CAPTURE -->
+        <div class="card">
+            <h2>Capture Face & Voice</h2>
+
+            <div class="challenge-box">
+                {{ challenge }}
+            </div>
+
+            <div style="position:relative; margin-top:15px;">
+                <div id="recIndicator" class="rec-indicator hidden">
+                    <div class="dot"></div>
+                    REC <span id="timer">00:00</span>
+                </div>
+                <video id="preview" autoplay muted></video>
+            </div>
+
+            <br>
+            <button id="start" class="btn-primary" disabled>Start Recording</button>
+            <button id="stop" class="btn-danger" disabled>Stop Recording</button>
+
+            <!-- ✅ RECORDED VIDEO (ONLY FOR VERIFY) -->
+            <div id="recordedSection" class="hidden" style="margin-top:20px;">
+                <h3>Upload Recorded Video (Verification Only)</h3>
+                <input type="file" id="videoFile" accept="video/*">
+                <button id="uploadRecorded" class="btn-primary">
+                    Verify Recorded Video
+                </button>
+            </div>
+
+        </div>
+
+        <!-- RESULTS -->
+        <div class="card">
+            <h2>Verification Report</h2>
+            <div id="resultBox" class="results">
+Awaiting verification...
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+let mode = null;
+let mediaRecorder;
+let recordedChunks = [];
+let startTime;
+let timerInterval;
+
+const landing = document.getElementById("landing");
+const mainFlow = document.getElementById("mainFlow");
+const deviceBtn = document.getElementById("deviceBtn");
+const startBtn = document.getElementById("start");
+const stopBtn = document.getElementById("stop");
+const resultBox = document.getElementById("resultBox");
+const recIndicator = document.getElementById("recIndicator");
+const timerSpan = document.getElementById("timer");
+const recordedSection = document.getElementById("recordedSection");
+
+// 🔥 MODE SELECT
+function startFlow(selectedMode){
+    mode = selectedMode;
+    landing.classList.add("hidden");
+    mainFlow.classList.remove("hidden");
+
+    deviceBtn.innerText = mode === "enroll" ?
+        "Enroll Device (Phone)" :
+        "Authenticate Device (Phone)";
+
+    // ✅ Show recorded only for verify
+    if(mode === "verify"){
+        recordedSection.classList.remove("hidden");
+    } else {
+        recordedSection.classList.add("hidden");
+    }
+}
+
+// 🔥 BACK TO HOME
+function goHome(){
+    location.reload();
+}
+
+// 🔥 SWITCH TO VERIFY AFTER ENROLL
+function switchToVerify(){
+
+    mode = "verify";
+
+    // Reset device authentication UI
+    deviceStatus.innerHTML = "";
+    startBtn.disabled = true;
+    stopBtn.disabled = true;
+
+    // Hide recorded until device auth again
+    recordedSection.classList.remove("hidden");
+
+    resultBox.innerText = "Please authenticate device to continue.";
+
+    setStep(1);
+}
+
+// CAMERA
+navigator.mediaDevices.getUserMedia({ video:true, audio:true })
+.then(stream => {
+    preview.srcObject = stream;
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+        clearInterval(timerInterval);
+        recIndicator.classList.add("hidden");
+
+        const username = document.getElementById("username").value;
+
+        const blob = new Blob(recordedChunks, {type:"video/webm"});
+        const formData = new FormData();
+        formData.append("video", blob);
+        formData.append("username", username);
+        formData.append("mode", mode);
+
+        const r = await fetch("/upload", {method:"POST", body:formData});
+        const text = await r.text();
+
+        // ✅ Enrollment success screen
+        if(mode === "enroll" && text.includes("Enrollment Successful")){
+            resultBox.innerHTML = `
+                <div style="text-align:center; padding:20px;">
+                    <h3 style="color:#16a34a; margin-bottom:20px;">
+                        🛡 Enrollment Completed Successfully
+                    </h3>
+
+                    <div style="display:flex; justify-content:center; gap:15px;">
+                        <button class="btn-success" onclick="switchToVerify()">
+                            Go to Verification
+                        </button>
+                        <button class="btn-gray" onclick="goHome()">
+                            Back to Home
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            resultBox.innerText = text;
+        }
+
+        recordedChunks = [];
+        setStep(3);
+    };
+});
+
+// RECORDED VIDEO VERIFY
+document.getElementById("uploadRecorded").onclick = async () => {
+
+    if(mode !== "verify") return alert("Only in verification mode");
+
+    const username = document.getElementById("username").value;
+    const file = document.getElementById("videoFile").files[0];
+    if(!file) return alert("Select video");
+
+    const formData = new FormData();
+    formData.append("video", file);
+    formData.append("username", username);
+    formData.append("mode", "verify_recorded");
+
+    const r = await fetch("/upload", {method:"POST", body:formData});
+    resultBox.innerText = await r.text();
+    setStep(3);
+};
+
+deviceBtn.onclick = async () => {
+
+    const username = document.getElementById("username").value;
+    if(!username) return alert("Enter username");
+
+    const endpoint = mode === "enroll"
+        ? "/qr_register_create"
+        : "/qr_auth_create";
+
+    const r = await fetch(endpoint,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({username})
+    });
+
+    const data = await r.json();
+    qrImage.src = data.qr;
+    qrContainer.classList.remove("hidden");
+
+    poll(data.session_id);
+};
+
+function poll(id){
+    const t = setInterval(async()=>{
+        const r = await fetch(`/qr_status/${id}`);
+        const s = await r.json();
+        if(s.authenticated){
+            clearInterval(t);
+            qrContainer.classList.add("hidden");
+            deviceStatus.innerHTML = "<b style='color:green'>✔ Device Verified</b>";
+            startBtn.disabled = false;
+            setStep(2);
+        }
+    },2000);
+}
+
+startBtn.onclick = () => {
+    recordedChunks = [];
+    mediaRecorder.start();
+    startTime = Date.now();
+    recIndicator.classList.remove("hidden");
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+
+    timerInterval = setInterval(()=>{
+        const seconds = Math.floor((Date.now()-startTime)/1000);
+        const min = String(Math.floor(seconds/60)).padStart(2,'0');
+        const sec = String(seconds%60).padStart(2,'0');
+        timerSpan.innerText = `${min}:${sec}`;
+    },1000);
+};
+
+stopBtn.onclick = () => {
+    const duration = (Date.now()-startTime)/1000;
+    if(duration < 5) return alert("Minimum 5 seconds required");
+    mediaRecorder.stop();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+};
+
+function setStep(n){
+    document.getElementById("step1").classList.remove("active");
+    document.getElementById("step2").classList.remove("active");
+    document.getElementById("step3").classList.remove("active");
+    document.getElementById("step"+n).classList.add("active");
+}
 </script>
 
 </body>
