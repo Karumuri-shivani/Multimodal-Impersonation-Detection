@@ -23,7 +23,7 @@ MID-Net is a multimodal identity verification system that combines face recognit
 - ECAPA-TDNN
 - Vision Transformer (ViT)
 - Flask
-- HTML, CSS, JavaScript
+- HTML, CSS, JavaScript, Tailwind
 
 ## Dataset
 - FakeAVCeleb
@@ -39,9 +39,20 @@ python app.py
 
 
 ## Team Members
-- Prasanna Lakshmi
-- karumuri Shivani
-- Ruchi
+- Prasanna Lakshmi Nakka
+- Shivani Karumuri
+- Ruchitanjani Jella
+
+## Pre-trained Models
+
+The trained model weights (`best_audio_model.pth` and `best_video_model.pth`) are not included in this repository because they exceed GitHub's file size limits.
+
+If you need the trained model files for academic or evaluation purposes, please contact me.
+
+Email: karumurishivani04@gmail.com
+
+Portfolio: https://karumuri-shivani.github.io/Portfolio/
+
 
 ## License
 This project is developed for academic purposes.
